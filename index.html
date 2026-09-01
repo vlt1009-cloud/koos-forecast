@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>KOOS 실시간 예측</title>
+<meta name="description" content="KOOS 운영 예측 시스템 — WRF 대기 · SWAN 파랑 · MOHID 해수유동 96시간 예측과 실시간 관측 검증">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#070b12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" href="assets/ust21.png">
+<link rel="preconnect" href="https://unpkg.com" crossorigin>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="map"></div>
+
+<header class="topbar">
+  <div class="brand glass">
+    <img class="brand-logo" src="assets/ust21.png" alt="UST21">
+    <div class="brand-txt">
+      <div class="brand-title">KOOS 실시간 예측</div>
+      <div class="brand-sub" id="cycle-label">불러오는 중…</div>
+    </div>
+  </div>
+  <nav class="modelbar glass" id="modelbar" role="tablist" aria-label="모델">
+    <span class="model-ind" id="model-ind"></span>
+  </nav>
+  <nav class="varbar glass" id="varbar" role="tablist" aria-label="표출 변수">
+    <span class="var-ind" id="var-ind"></span>
+  </nav>
+</header>
+
+<div class="tools glass">
+  <button class="iconbtn wide on" type="button" id="btn-panel" title="레이어 (L)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round">
+      <path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+    <span>레이어</span>
+  </button>
+  <button class="iconbtn wide" type="button" id="btn-obs" title="관측 검증 (O)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 3v16.5A1.5 1.5 0 0 0 4.5 21H21"/><path d="m7 15 3.5-4.5L14 13l4-6"/></svg>
+    <span>관측검증</span>
+  </button>
+  <button class="iconbtn" type="button" id="btn-full" title="전체 화면 (F)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+  </button>
+  <button class="iconbtn" type="button" id="btn-help" title="도움말 (?)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 1 1 3.3 2.4c-.6.2-.9.8-.9 1.4v.5"/>
+      <circle cx="12" cy="17" r=".6" fill="currentColor"/></svg>
+  </button>
+</div>
+
+<aside class="panel glass" id="panel" aria-label="레이어 설정">
+  <div class="ptitle">레이어</div>
+  <div class="group">
+    <label class="row">
+      <span class="rl"><b id="vec-name">방향 흐름</b></span>
+      <input class="sw" id="vec-check" type="checkbox" checked>
+    </label>
+    <label class="row sub">
+      <span class="rl"><b>입자 밀도</b></span>
+      <select class="sel" id="vec-density">
+        <option value="0.5">낮음</option>
+        <option value="1" selected>보통</option>
+        <option value="2">높음</option>
+        <option value="3">아주 높음</option>
+      </select>
+    </label>
+    <label class="row sub">
+      <span class="rl"><b>꼬리 길이</b></span>
+      <select class="sel" id="vec-fade">
+        <option value="1.6">김</option>
+        <option value="1" selected>보통</option>
+        <option value="0.65">짧음</option>
+      </select>
+    </label>
+  </div>
+  <div class="group">
+    <label class="row">
+      <span class="rl"><b>배경 지도</b></span>
+      <select class="sel" id="basemap">
+        <option value="carto" selected>어두운 지도</option>
+        <option value="esri">위성영상</option>
+      </select>
+    </label>
+  </div>
+  <div class="group">
+    <label class="row">
+      <span class="rl"><b>모델 격자</b></span>
+      <input class="sw" id="grid-check" type="checkbox">
+    </label>
+    <label class="row">
+      <span class="rl"><b>관측 지점</b></span>
+      <input class="sw" id="obs-check" type="checkbox">
+    </label>
+    <label class="row">
+      <span class="rl"><b>색 불투명도</b></span>
+      <input class="rng" id="opacity" type="range" min="0.1" max="1" value="0.85" step="0.02">
+      <span class="rng-val" id="opacity-val">85%</span>
+    </label>
+  </div>
+  <div class="status" id="status-line">불러오는 중…</div>
+</aside>
+
+<aside class="panel obs glass closed" id="obspanel" aria-label="관측 검증">
+  <div class="ptitle">
+    관측 검증
+    <button class="p-x" type="button" id="obs-x" title="닫기">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="ob-segbar" id="ob-segbar"></div>
+  <div class="ob-filter">
+    <input class="ob-q" id="ob-q" type="search" placeholder="관측소 검색" aria-label="관측소 검색">
+    <select class="sel" id="ob-sort" aria-label="정렬">
+      <option value="rmse-" selected>RMSE 작은 순</option>
+      <option value="rmse">RMSE 큰 순</option>
+      <option value="name">이름순</option>
+      <option value="lat">북에서 남</option>
+    </select>
+  </div>
+  <div class="ob-chips" id="ob-chips"></div>
+  <div class="ob-cnt" id="ob-cnt">—</div>
+  <div class="ob-list" id="ob-list"></div>
+  <div class="ob-foot" id="ob-foot"></div>
+</aside>
+
+<aside class="obsdetail glass" id="obsdetail" aria-label="관측소 상세" hidden>
+  <div class="ob-head">
+    <div class="ob-head-tx">
+      <div class="ob-nm" id="ob-nm">—</div>
+      <div class="ob-meta" id="ob-meta">—</div>
+    </div>
+    <button class="p-x" type="button" id="ob-dx" title="닫기">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="ob-body" id="ob-body"></div>
+</aside>
+
+<div class="legend glass" id="legend"></div>
+
+<div class="timebar glass" id="timebar">
+  <button id="play" type="button" data-playing="0" aria-label="재생">▶</button>
+  <div class="clock">
+    <div class="c-main" id="clock-main">—</div>
+    <div class="c-sub" id="clock-sub">—</div>
+  </div>
+  <div class="scrub" id="scrub">
+    <div class="pastband" id="pastband" hidden></div>
+    <div class="noband" id="noband" hidden></div>
+    <div class="ticks" id="ticks" aria-hidden="true"></div>
+    <input class="rng" id="time-range" type="range" min="0" max="96" step="0.05" value="0"
+           aria-label="예측 시각">
+    <div class="nowmark" id="nowmark" hidden></div>
+  </div>
+  <select class="speed" id="speed" aria-label="재생 속도">
+    <option value="0.5">0.5×</option>
+    <option value="1" selected>1×</option>
+    <option value="2">2×</option>
+    <option value="4">4×</option>
+  </select>
+</div>
+
+<div class="modal" id="help" hidden>
+  <div class="modal-in glass">
+    <button class="p-x" type="button" id="help-x" title="닫기">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <h2>KOOS 실시간 예측</h2>
+    <p>매일 12 UTC 초기장, 96시간. 색칠판은 <b>항상 최신 예측</b>입니다.</p>
+    <table class="htab">
+      <tr><th>WRF</th><td>대기 · 곡선격자 360×360 · 풍속 기온 기압 습도 강수</td></tr>
+      <tr><th>SWAN</th><td>파랑 · 720×712 · 유의파고 파향 주기 너울</td></tr>
+      <tr><th>MOHID</th><td>해수유동 · 360×356 · 유속 수위 수온 염분</td></tr>
+    </table>
+    <table class="htab">
+      <tr><th>풍향</th><td>불어오는 쪽</td></tr>
+      <tr><th>파향</th><td>오는 쪽</td></tr>
+      <tr><th>유향</th><td>가는 쪽</td></tr>
+    </table>
+    <h3>단축키</h3>
+    <table class="htab">
+      <tr><th>Space</th><td>재생 / 멈춤</td></tr>
+      <tr><th>← →</th><td>한 시간 이동</td></tr>
+      <tr><th>↑ ↓</th><td>변수 바꾸기</td></tr>
+      <tr><th>1 2 3</th><td>WRF / SWAN / MOHID</td></tr>
+      <tr><th>L O F</th><td>레이어 · 관측검증 · 전체화면</td></tr>
+      <tr><th>B</th><td>어두운 지도 / 위성영상</td></tr>
+      <tr><th>G</th><td>모델 격자 보기</td></tr>
+      <tr><th>지도 클릭</th><td>그 지점 전 모델 값</td></tr>
+    </table>
+    <h3>손가락</h3>
+    <table class="htab">
+      <tr><th>두 손가락</th><td>확대 · 축소</td></tr>
+      <tr><th>탭</th><td>그 지점 전 모델 값</td></tr>
+      <tr><th>변수 줄</th><td>옆으로 밀어 나머지 변수</td></tr>
+    </table>
+    <p>관측값은 물리범위·스파이크·먹통센서·변수간모순 네 가지로 걸러 씁니다.
+       보고 있는 화면은 주소줄에 그대로 담깁니다.</p>
+    <p class="fine" id="help-fine">—</p>
+    <p class="fine" id="help-perf">—</p>
+  </div>
+</div>
+
+<div class="boot" id="boot"><div class="boot-in">KOOS 예측장을 불러오는 중…</div></div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script type="module" src="koos.js"></script>
+</body>
+</html>

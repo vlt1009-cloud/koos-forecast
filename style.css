@@ -1,0 +1,865 @@
+/* KOOS 실시간 예측 — 화면 */
+
+:root{
+  --bg:#070b12;
+  --ink:#e8eef6;
+  --dim:#93a2b8;
+  --faint:#5d6b80;
+  --line:rgba(255,255,255,.10);
+  --line2:rgba(255,255,255,.06);
+  --glass:rgba(12,18,28,.72);
+  --glass2:rgba(16,24,36,.86);
+  --accent:#4da3ff;
+  --wrf:#5bc8ff;
+  --swan:#7ee0a8;
+  --mohid:#ffb454;
+  --warn:#ff6b6b;
+  --r:12px;
+  /* 노치·홈바 여백. 위만 있으면 아이폰 가로보기에서 왼쪽 단추가 노치에
+     먹히고, 세로보기에서 시간막대가 홈바에 깔린다. 네 방향 다 잡는다. */
+  --pad:env(safe-area-inset-top,0px);
+  --padb:env(safe-area-inset-bottom,0px);
+  --padl:env(safe-area-inset-left,0px);
+  --padr:env(safe-area-inset-right,0px);
+  /* 시간막대 실측 높이 (koos.js 가 채운다). 폰에서는 막대가 두 줄이 되어
+     높이가 달라진다 — 범례 위치를 숫자로 박아 두면 겹친다. */
+  --tbh:58px;
+  --shadow:0 8px 28px rgba(0,0,0,.45);
+}
+
+*{box-sizing:border-box}
+
+/* hidden 속성이 클래스보다 세야 한다.
+   브라우저 기본 [hidden]{display:none} 은 특정도가 가장 낮아서 .modal{display:flex}
+   같은 클래스 규칙에 진다. 그러면 hidden 을 달아 둔 요소가 처음부터 보이고,
+   JS 가 el.hidden = true 를 해도 아무 일이 안 일어난다 (닫기 버튼이 먹통이 된다).
+   #help #skill #chartwrap #chart-tip 이 전부 여기 걸려 있었다. */
+[hidden]{display:none !important}
+html,body{height:100%;margin:0}
+/* 폰 브라우저의 100% 는 주소창이 접힐 때 같이 늘었다 줄었다 한다. 그러면
+   지도 아래쪽이 잘리거나 시간막대가 화면 밖으로 밀린다. dvh 는 지금 실제로
+   보이는 높이다. 모르는 브라우저에서는 이 줄만 버려지고 위의 100% 가 산다. */
+@supports (height:100dvh){ html,body{height:100dvh} }
+body{
+  background:var(--bg); color:var(--ink);
+  font:400 13px/1.45 -apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo",
+       "Malgun Gothic","Noto Sans KR",system-ui,sans-serif;
+  overflow:hidden; -webkit-font-smoothing:antialiased;
+  /* 손가락으로 누를 때 파란 사각형이 번쩍이는 것, 두 번 눌러 확대되는 것,
+     단추 글자가 드래그로 선택되는 것 — 지도 위 조작에서는 전부 방해다. */
+  -webkit-tap-highlight-color:transparent;
+  touch-action:manipulation;
+}
+button,.sel,.sw,.ptitle,.rl,.ob-cnt,.c-main,.c-sub,.lg-t,.lg-s{
+  -webkit-user-select:none; user-select:none;
+}
+#map{position:absolute;inset:0}
+canvas{outline:none}
+
+/* 키보드 초점. 브라우저 기본 초점 테두리는 검정 유리 위에서 거의 안 보인다 —
+   Tab 으로 훑으면 지금 어디에 있는지 알 수 없었다. :focus-visible 이라
+   마우스로 누를 때는 안 뜬다. */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:9px}
+
+.glass{
+  background:var(--glass);
+  backdrop-filter:blur(14px) saturate(1.3);
+  -webkit-backdrop-filter:blur(14px) saturate(1.3);
+  border:1px solid var(--line);
+  border-radius:var(--r);
+  box-shadow:var(--shadow);
+}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* ── 좌상단 ────────────────────────────────────────────────── */
+.topbar{
+  position:absolute; left:calc(12px + var(--padl)); top:calc(12px + var(--pad)); z-index:20;
+  display:flex; flex-direction:column; gap:8px; align-items:flex-start;
+  /* 껍데기는 손가락을 안 받는다. 폰에서는 이 상자가 화면 폭을 다 쓰는데
+     (변수 막대가 가로로 눕는다), 빈 자리가 손을 먹으면 지도 위쪽 3분의 1을
+     끌 수 없다. 알맹이만 받게 한다. */
+  pointer-events:none;
+}
+.topbar > *{pointer-events:auto}
+.brand{display:flex;align-items:center;gap:10px;padding:8px 13px 8px 9px}
+.brand-logo{width:30px;height:30px;object-fit:contain;border-radius:6px;flex:none}
+.brand-title{font-size:14px;font-weight:650;letter-spacing:-.2px;line-height:1.2}
+.brand-sub{font-size:11px;color:var(--dim);margin-top:1px;font-variant-numeric:tabular-nums}
+
+/* 모델 탭 */
+.modelbar{position:relative;display:flex;padding:4px;gap:2px}
+.modelbar button{
+  position:relative;z-index:1;appearance:none;background:none;border:0;
+  color:var(--dim); cursor:pointer; font:inherit; font-weight:600;
+  padding:7px 14px 6px; border-radius:9px; line-height:1.15;
+  display:flex; flex-direction:column; align-items:center; gap:1px;
+  transition:color .18s;
+}
+.modelbar button i{font-style:normal;font-size:10px;font-weight:500;opacity:.72}
+.modelbar button:hover{color:var(--ink)}
+.modelbar button[aria-selected="true"]{color:#08121f}
+.modelbar button[aria-selected="true"] i{opacity:.66}
+.model-ind{
+  position:absolute; z-index:0; top:4px; bottom:4px; left:0; width:0;
+  border-radius:9px; background:var(--accent);
+  transition:transform .26s cubic-bezier(.4,.9,.3,1), width .26s cubic-bezier(.4,.9,.3,1);
+}
+.modelbar[data-model="wrf"]   .model-ind{background:var(--wrf)}
+.modelbar[data-model="swan"]  .model-ind{background:var(--swan)}
+.modelbar[data-model="mohid"] .model-ind{background:var(--mohid)}
+
+/* ── 우상단 도구 ───────────────────────────────────────────── */
+.tools{
+  position:absolute; right:calc(12px + var(--padr)); top:calc(12px + var(--pad)); z-index:20;
+  display:flex; gap:2px; padding:4px;
+}
+.iconbtn{
+  appearance:none;background:none;border:0;color:var(--dim);cursor:pointer;
+  display:flex;align-items:center;gap:6px;padding:8px;border-radius:9px;
+  font:inherit;font-size:12px;font-weight:550;transition:.15s;
+}
+.iconbtn svg{width:17px;height:17px;flex:none}
+.iconbtn:hover{color:var(--ink);background:rgba(255,255,255,.07)}
+.iconbtn.on{color:var(--ink);background:rgba(255,255,255,.12)}
+.iconbtn.wide{padding:8px 11px}
+a.iconbtn{text-decoration:none}
+/* 글자를 감추는 목. 720px 이었는데 도구가 셋에서 넷으로 늘면서
+   (레이어·검증·특보판·경로판) 도구 상자가 400px 을 넘겼다 — 왼쪽 위
+   머리(브랜드·모델 탭·변수 탭)와 800px 안팎에서 맞부딪친다. 다른 판과
+   같은 900px 으로 맞춘다. 감춰도 title 이 남으니 뜻은 안 잃는다. */
+@media (max-width:900px){ .iconbtn.wide span{display:none} .iconbtn.wide{padding:8px} }
+
+/* ── 변수 탭 ───────────────────────────────────────────────── */
+/* .topbar 의 셋째 칸. top 을 숫자로 박지 않는다 — 브랜드 줄이나 모델 탭의
+   글꼴/줄높이가 조금만 바뀌어도 헤더가 자라서 모델 탭을 덮어 버렸다.
+   position:relative 는 유지해야 한다. moveInd() 가 버튼의 offsetTop 을
+   .varbar 기준으로 재기 때문이다 (koos.js:99). */
+.varbar{
+  position:relative; z-index:19;
+  display:flex; flex-direction:column; padding:4px; gap:1px; min-width:104px;
+  max-height:calc(100vh - 260px); overflow-y:auto;
+}
+.varbar button{
+  position:relative;z-index:1;appearance:none;background:none;border:0;
+  color:var(--dim);cursor:pointer;font:inherit;font-size:12px;font-weight:550;
+  padding:7px 12px;border-radius:8px;text-align:left;transition:color .16s;
+  display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+}
+.varbar button u{text-decoration:none;font-size:10px;opacity:.6;font-weight:500}
+.varbar button:hover{color:var(--ink)}
+.varbar button[aria-selected="true"]{color:#08121f}
+.var-ind{
+  position:absolute;z-index:0;left:4px;right:4px;height:0;top:0;border-radius:8px;
+  background:var(--accent);
+  transition:transform .22s cubic-bezier(.4,.9,.3,1), height .22s cubic-bezier(.4,.9,.3,1);
+}
+.varbar[data-model="wrf"]   .var-ind{background:var(--wrf)}
+.varbar[data-model="swan"]  .var-ind{background:var(--swan)}
+.varbar[data-model="mohid"] .var-ind{background:var(--mohid)}
+
+/* ── 패널 ──────────────────────────────────────────────────── */
+.panel{
+  position:absolute; right:12px; top:calc(64px + var(--pad)); z-index:18;
+  width:284px; padding:12px; max-height:calc(100vh - 190px); overflow-y:auto;
+  transition:opacity .2s, transform .22s;
+}
+.panel.closed{opacity:0;transform:translateY(-8px) scale(.98);pointer-events:none}
+.ptitle{
+  font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--faint);margin:2px 2px 10px;display:flex;justify-content:space-between;
+  align-items:center;
+}
+.p-x{appearance:none;background:none;border:0;color:var(--faint);cursor:pointer;padding:2px;
+     border-radius:6px;display:flex}
+.p-x svg{width:15px;height:15px}
+.p-x:hover{color:var(--ink);background:rgba(255,255,255,.08)}
+.group{border-top:1px solid var(--line2);padding:8px 0;margin:0}
+.group:first-of-type{border-top:0;padding-top:0}
+.row{display:flex;align-items:center;gap:10px;padding:6px 2px;cursor:pointer}
+.row.sub{padding-left:2px}
+.rl{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.rl b{font-weight:550;font-size:12.5px}
+.rl i{font-style:normal;font-size:10.5px;color:var(--faint);line-height:1.3}
+
+.sw{appearance:none;width:34px;height:19px;border-radius:10px;background:rgba(255,255,255,.14);
+    position:relative;cursor:pointer;flex:none;transition:background .18s;border:0;margin:0}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;
+    background:#fff;transition:transform .18s}
+.sw:checked{background:var(--accent)}
+.sw:checked::after{transform:translateX(15px)}
+
+/* 펼침 목록.
+
+   `color-scheme:dark` 가 없으면 펼쳐진 목록은 **OS가** 그린다 — 우리 CSS가
+   못 닿는 곳이라 바탕은 흰색인데 글씨만 var(--ink) 를 물려받아 흰 바탕에 흰
+   글씨가 된다. option 색도 같이 못박아 둔다 (color-scheme 를 무시하는 브라우저
+   대비). 화살표는 background-size 로 크기를 정하고 오른쪽 여백을 그만큼
+   벌려야 글자와 안 붙는다. */
+.sel{appearance:none;color-scheme:dark;
+     background-color:rgba(255,255,255,.07);border:1px solid var(--line);
+     color:var(--ink);font:inherit;font-size:12px;padding:6px 30px 6px 11px;border-radius:8px;
+     cursor:pointer;flex:none;line-height:1.35;
+     background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M3 5l3 3 3-3' fill='none' stroke='%2393a2b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+     background-repeat:no-repeat;background-position:right 9px center;background-size:11px 11px}
+.sel:hover{background-color:rgba(255,255,255,.12)}
+.sel:focus{outline:none;border-color:var(--accent)}
+.sel option{background:#0f1720;color:#e6edf6}
+.sel optgroup{background:#0f1720;color:#93a2b8}
+
+.rng{appearance:none;flex:1;height:3px;border-radius:2px;background:rgba(255,255,255,.16);
+     cursor:pointer;margin:0}
+.rng::-webkit-slider-thumb{appearance:none;width:13px;height:13px;border-radius:50%;
+     background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.rng::-moz-range-thumb{width:13px;height:13px;border:0;border-radius:50%;background:#fff}
+.rng-val{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums;
+     min-width:32px;text-align:right;flex:none}
+
+.status{border-top:1px solid var(--line2);margin-top:6px;padding-top:8px;
+        font-size:10.5px;color:var(--faint);line-height:1.5;font-variant-numeric:tabular-nums}
+
+/* ── 관측 검증: 목록 패널 ──────────────────────────────────── */
+.panel.obs{width:312px;max-height:calc(100vh - 150px);display:flex;flex-direction:column;
+  padding-bottom:0}
+
+/* 변수 세그먼트. 열세 개라 한 줄에 안 들어간다 — 줄바꿈시킨다. */
+.ob-segbar{display:flex;flex-wrap:wrap;gap:3px;margin:2px 0 8px}
+.ob-seg{appearance:none;border:1px solid var(--line);background:rgba(255,255,255,.03);
+  color:var(--dim);font:inherit;font-size:10.5px;padding:3px 6px;border-radius:7px;
+  cursor:pointer;display:flex;align-items:center;gap:4px;line-height:1.3;
+  transition:background .14s,border-color .14s,color .14s}
+.ob-seg:hover{background:rgba(255,255,255,.07);color:var(--ink)}
+.ob-seg.on{background:rgba(77,163,255,.16);border-color:rgba(77,163,255,.5);color:var(--ink)}
+.ob-seg-n{font-size:9px;color:var(--faint);font-variant-numeric:tabular-nums}
+.ob-seg.on .ob-seg-n{color:var(--accent)}
+
+.ob-filter{display:flex;gap:5px;margin-bottom:6px}
+/* 검색칸. color-scheme 를 안 주면 type=search 의 지우기(✕) 단추를 브라우저가
+   검은색으로 그려서 어두운 바탕에 묻힌다. */
+.ob-q{flex:1;min-width:0;appearance:none;color-scheme:dark;
+  background:rgba(255,255,255,.06);
+  border:1px solid var(--line);border-radius:8px;color:var(--ink);font:inherit;
+  font-size:12px;padding:6px 9px}
+.ob-q::placeholder{color:var(--faint)}
+.ob-q:focus{outline:none;border-color:var(--accent)}
+.ob-filter .sel{font-size:11px;padding:6px 28px 6px 9px;background-position:right 8px center}
+
+.ob-chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:7px}
+.ob-chip{appearance:none;border:1px solid var(--line);background:transparent;color:var(--faint);
+  font:inherit;font-size:10px;padding:2.5px 7px;border-radius:20px;cursor:pointer;
+  transition:background .14s,color .14s,border-color .14s}
+.ob-chip:hover:not(:disabled){color:var(--ink);border-color:var(--line2)}
+.ob-chip.on{background:rgba(255,255,255,.13);color:var(--ink);border-color:transparent}
+.ob-chip:disabled{opacity:.3;cursor:default}
+
+.ob-cnt{font-size:9.5px;letter-spacing:.06em;color:var(--faint);
+  font-variant-numeric:tabular-nums;padding-bottom:4px}
+
+/* 목록만 스크롤한다. 필터가 같이 밀려 올라가면 다시 찾아 내려야 한다. */
+.ob-list{flex:1;min-height:120px;overflow-y:auto;margin:0 -4px}
+.ob-st{display:flex;align-items:center;gap:8px;width:100%;appearance:none;border:0;
+  background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;
+  padding:5px 6px;border-radius:8px;transition:background .12s}
+.ob-st:hover{background:rgba(255,255,255,.06)}
+.ob-st.on{background:rgba(77,163,255,.16)}
+.ob-st .ob-dot{width:9px;height:9px;border-radius:50%;flex:none;
+  box-shadow:0 0 0 1px rgba(255,255,255,.28)}
+.ob-st-txt{flex:1;min-width:0}
+.ob-st-nm{font-size:12px;font-weight:550;letter-spacing:-.2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ob-st-sub{font-size:9.5px;color:var(--faint);font-variant-numeric:tabular-nums;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ob-st-val{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums;flex:none}
+.ob-st.on .ob-st-val{color:var(--ink)}
+
+/* RMSE 램프 범례. 색이 무슨 뜻인지 없으면 그냥 알록달록한 점일 뿐이다. */
+.ob-foot{display:flex;align-items:center;gap:6px;font-size:9.5px;color:var(--faint);
+  font-variant-numeric:tabular-nums;border-top:1px solid var(--line2);
+  margin-top:6px;padding:7px 0 10px;flex:none}
+.ob-foot b{font-weight:500;color:var(--dim)}
+.ob-ramp{flex:1;display:flex;height:7px;border-radius:4px;overflow:hidden;min-width:50px}
+.ob-ramp i{flex:1}
+
+/* ── 관측 검증: 상세 패널 ──────────────────────────────────── */
+.obsdetail{
+  position:absolute; right:336px; top:calc(64px + var(--pad)); z-index:19;
+  width:460px; max-height:calc(100vh - 150px); padding:12px 14px;
+  display:flex; flex-direction:column; overflow:hidden;
+}
+.ob-head{display:flex;align-items:flex-start;gap:8px;flex:none;padding-bottom:8px;
+  border-bottom:1px solid var(--line2)}
+.ob-head-tx{flex:1;min-width:0}
+.ob-nm{font-size:15px;font-weight:650;letter-spacing:-.2px}
+.ob-meta{font-size:10px;color:var(--faint);margin-top:2px;
+  font-variant-numeric:tabular-nums}
+.ob-body{flex:1;overflow-y:auto;padding-top:9px;margin:0 -4px;padding-left:4px;padding-right:4px}
+
+/* 변수 탭은 **모델마다 한 줄**이다. 열셋을 죽 흘려 놓으면 어느 게 어느
+   모델 건지 알 수 없다 — 줄 머리에 모델 이름을 제 색으로 박아 둔다
+   (좌상단 모델 단추와 같은 색). */
+.ob-vtabs{display:flex;flex-direction:column;gap:4px;margin-bottom:9px}
+.ob-vrow{display:flex;flex-wrap:wrap;align-items:center;gap:3px}
+.ob-vrow-n{font-size:10px;font-weight:700;letter-spacing:.04em;
+  min-width:44px;flex:none;color:var(--mc)}
+.ob-vtab{appearance:none;border:0;background:rgba(255,255,255,.05);color:var(--faint);
+  font:inherit;font-size:10.5px;padding:3px 8px;border-radius:6px;cursor:pointer;
+  transition:background .14s,color .14s}
+.ob-vtab:hover{background:rgba(255,255,255,.1);color:var(--ink)}
+.ob-vtab.on{background:rgba(77,163,255,.2);color:var(--ink)}
+.ob-vtab.on{background:color-mix(in srgb,var(--mc) 26%,transparent)}   /* 되면 모델색으로 */
+
+/* 지금 시간 막대가 서 있는 시각의 값. 이 한 줄이 지도와 그래프를 묶는다. */
+.ob-now{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;
+  font-size:11px;font-variant-numeric:tabular-nums;
+  background:rgba(255,255,255,.045);border-radius:8px;padding:6px 9px;margin-bottom:8px}
+.ob-now-t{color:var(--dim);font-weight:600}
+.ob-now-v{display:flex;align-items:center;gap:5px;color:var(--ink)}
+.ob-now-v i{width:8px;height:8px;border-radius:2px;flex:none}
+.ob-miss{color:var(--faint);font-style:italic}
+.ob-now-d{color:var(--faint);margin-left:auto}
+
+.ob-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;
+  margin-bottom:9px}
+.ob-card{background:rgba(255,255,255,.045);border-radius:8px;padding:6px 8px}
+.ob-card-l{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.ob-card-v{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;
+  letter-spacing:-.3px;margin-top:1px}
+.ob-card-u{font-size:9.5px;font-weight:400;color:var(--faint);margin-left:3px}
+
+.ob-warn{font-size:10.5px;color:var(--warn);background:rgba(255,107,107,.1);
+  border-radius:7px;padding:5px 8px;margin-bottom:8px;line-height:1.5}
+
+.ob-ctrls{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:7px}
+.ob-spacer{flex:1}
+.ob-mini{appearance:none;border:1px solid var(--line);background:transparent;color:var(--faint);
+  font:inherit;font-size:10px;padding:2.5px 7px;border-radius:6px;cursor:pointer;
+  transition:background .14s,color .14s}
+.ob-mini:hover{color:var(--ink);background:rgba(255,255,255,.07)}
+.ob-mini.on{background:rgba(255,255,255,.14);color:var(--ink);border-color:transparent}
+
+.ob-legend{display:flex;flex-wrap:wrap;align-items:center;gap:3px 11px;
+  font-size:10px;color:var(--faint);margin-bottom:5px}
+.ob-lg-it{display:flex;align-items:center;gap:5px}
+.ob-lg-sw{width:12px;height:3px;border-radius:2px;flex:none}
+
+.ob-chartbox{position:relative;margin:0 0 6px}
+.ob-chart{width:100%;display:block;border-radius:8px;cursor:crosshair;touch-action:none}
+.ob-chart.nopan{cursor:default}
+.ob-chart.grabbing{cursor:grabbing}
+.ob-chart.zoomsel{cursor:col-resize}
+.ob-tip{position:absolute;pointer-events:none;z-index:3;padding:6px 9px;border-radius:7px;
+  background:var(--glass2);border:1px solid var(--line);font-size:10.5px;line-height:1.55;
+  font-variant-numeric:tabular-nums;white-space:nowrap;box-shadow:var(--shadow);
+  transform:translate(-50%,-100%);opacity:0;transition:opacity .1s}
+.ob-tip.on{opacity:1}
+.ob-tip-t{font-weight:600;color:var(--dim);margin-bottom:2px}
+.ob-tip-r{display:flex;align-items:center;gap:6px}
+.ob-tip-d{width:7px;height:7px;border-radius:2px;flex:none}
+
+.ob-hint{font-size:9.5px;color:var(--faint);line-height:1.6;margin-bottom:8px}
+.ob-note{font-size:10px;color:var(--faint);line-height:1.6;
+  border-top:1px solid var(--line2);padding-top:6px;margin-top:6px}
+.ob-note b{color:var(--dim);font-weight:600}
+.ob-empty{font-size:11.5px;color:var(--faint);text-align:center;padding:26px 10px;
+  line-height:1.6}
+
+/* 지도 위 호버 팝업. 이름표를 심볼로 못 넣어 (공개 글립셋에 한글이 없다)
+   호버로 대신한다. */
+.stpop .maplibregl-popup-content{
+  background:var(--glass2);border:1px solid var(--line);border-radius:8px;
+  padding:6px 9px;box-shadow:var(--shadow);color:var(--ink);
+  font:inherit;font-size:11px;line-height:1.45;
+}
+.stpop .maplibregl-popup-content b{display:block;font-weight:600}
+.stpop .maplibregl-popup-content span{color:var(--faint);font-size:10px;
+  font-variant-numeric:tabular-nums}
+.stpop .maplibregl-popup-tip{border-top-color:var(--glass2);border-bottom-color:var(--glass2)}
+
+/* 좁은 화면에서는 둘이 나란히 못 선다. 상세를 전면으로 올리고 목록은 숨긴다. */
+@media (max-width:1180px){
+  .obsdetail{right:12px;width:calc(100vw - 24px);max-width:520px;z-index:21}
+}
+@media (max-width:900px){
+  .panel.obs{width:calc(100vw - 24px)}
+  .obsdetail{width:calc(100vw - 24px);max-width:none;
+    max-height:calc(100vh - 130px);top:calc(56px + var(--pad))}
+}
+
+/* ── 범례 ──────────────────────────────────────────────────── */
+.legend{
+  position:absolute; left:calc(12px + var(--padl)); z-index:18; padding:9px 11px 8px;
+  bottom:calc(var(--tbh) + 20px + var(--padb));
+  min-width:190px;
+}
+.legend .lg-t{font-size:11px;font-weight:600;margin-bottom:6px;display:flex;
+  justify-content:space-between;gap:10px}
+.legend .lg-t u{text-decoration:none;color:var(--faint);font-weight:500}
+.legend .lg-bar{height:9px;border-radius:5px;margin-bottom:3px}
+.legend .lg-s{display:flex;justify-content:space-between;font-size:9.5px;color:var(--faint);
+  font-variant-numeric:tabular-nums}
+/* 등치선 안내. 선을 세어 값을 읽으려면 간격을 알아야 한다. */
+.legend .lg-iso{margin-top:5px;padding-top:5px;border-top:1px solid var(--line2);
+  font-size:9.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+
+/* ── 시간 막대 ─────────────────────────────────────────────── */
+.timebar{
+  position:absolute; z-index:20;
+  left:calc(12px + var(--padl)); right:calc(12px + var(--padr));
+  bottom:calc(12px + var(--padb));
+  display:flex; align-items:center; gap:12px; padding:9px 13px;
+}
+#play{
+  appearance:none;width:34px;height:34px;flex:none;border-radius:50%;border:0;cursor:pointer;
+  background:var(--accent);color:#08121f;font-size:13px;line-height:1;
+  display:flex;align-items:center;justify-content:center;transition:background .18s;
+}
+.timebar[data-model="wrf"]   #play{background:var(--wrf)}
+.timebar[data-model="swan"]  #play{background:var(--swan)}
+.timebar[data-model="mohid"] #play{background:var(--mohid)}
+#play[data-playing="1"]::before{content:"❚❚";font-size:10px;letter-spacing:1px}
+#play[data-playing="1"]{font-size:0}
+.clock{flex:none;min-width:132px;line-height:1.25}
+.c-main{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+.c-sub{font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+.scrub{flex:1;position:relative;padding:12px 0 8px}
+.scrub .rng{width:100%}
+.ticks{position:absolute;left:0;right:0;top:0;height:11px;pointer-events:none}
+.ticks i{position:absolute;top:0;width:1px;height:5px;background:rgba(255,255,255,.20)}
+.ticks i.day{height:8px;background:rgba(255,255,255,.42)}
+.ticks b{position:absolute;top:0;font-size:9px;color:var(--faint);font-weight:500;
+  transform:translateX(-50%);white-space:nowrap}
+/* 시간축 앞머리 = 직전 사이클 예보. 지금 사이클과 눈으로 갈라 보이게. */
+.pastband{position:absolute;left:0;top:9px;bottom:6px;border-radius:3px;
+  background:rgba(255,255,255,.055);
+  border-right:1px dashed rgba(255,255,255,.28);pointer-events:none}
+/* 시간축 꼬리 = 이 모델의 예보가 안 닿는 구간. 축은 셋이 공유하므로
+   뒤처진 사이클(대개 MOHID)은 여기가 빈다. 빈 이유를 눈에 보이게 한다. */
+.noband{position:absolute;right:0;top:9px;bottom:6px;border-radius:3px;
+  background:repeating-linear-gradient(-45deg,
+    rgba(255,255,255,.10) 0 4px, rgba(255,255,255,0) 4px 8px);
+  border-left:1px dashed rgba(255,220,140,.45);pointer-events:none}
+.nowmark{position:absolute;top:9px;bottom:6px;width:2px;border-radius:1px;
+  background:var(--warn);box-shadow:0 0 6px var(--warn);pointer-events:none}
+/* 재생 속도. .sel 과 같은 손질이 필요하다 — 반투명 흰 바탕을 그대로 두면
+   펼친 목록도 그 색으로 그려져 흰 바탕에 흰 글씨가 된다. 화살표가 없으면
+   누를 수 있는 것인지도 모른다. */
+.speed{appearance:none;color-scheme:dark;
+  background-color:rgba(255,255,255,.07);border:1px solid var(--line);
+  color:var(--dim);font:inherit;font-size:11px;padding:5px 22px 5px 8px;border-radius:8px;
+  cursor:pointer;flex:none;line-height:1.35;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M3 5l3 3 3-3' fill='none' stroke='%2393a2b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 6px center;background-size:10px 10px}
+.speed:hover{background-color:rgba(255,255,255,.12);color:var(--ink)}
+.speed:focus{outline:none;border-color:var(--accent)}
+.speed option{background:#0f1720;color:#e6edf6}
+@media (max-width:640px){ .clock{min-width:96px} }
+
+/* ── 도움말 ────────────────────────────────────────────────── */
+.modal{position:absolute;inset:0;z-index:60;display:flex;align-items:center;
+  justify-content:center;background:rgba(4,7,12,.62);padding:20px}
+.modal-in{position:relative;max-width:600px;width:100%;max-height:84vh;overflow-y:auto;
+  padding:22px 24px}
+.modal-in .p-x{position:absolute;right:12px;top:12px}
+.modal-in h2{margin:0 0 10px;font-size:17px;letter-spacing:-.3px}
+.modal-in h3{margin:16px 0 7px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--faint)}
+.modal-in p{margin:0 0 9px;color:var(--dim);font-size:12.5px;line-height:1.6}
+.modal-in b{color:var(--ink);font-weight:600}
+.htab{width:100%;border-collapse:collapse;font-size:12px}
+.htab th{text-align:left;padding:4px 12px 4px 0;color:var(--ink);font-weight:600;
+  white-space:nowrap;vertical-align:top;width:1%}
+.htab td{padding:4px 0;color:var(--dim);line-height:1.5}
+.fine{font-size:10.5px;color:var(--faint);border-top:1px solid var(--line2);
+  padding-top:10px;margin-top:14px}
+
+/* ── 첫 화면 ───────────────────────────────────────────────── */
+.boot{position:absolute;inset:0;z-index:90;display:flex;align-items:center;
+  justify-content:center;background:var(--bg);transition:opacity .45s}
+.boot.gone{opacity:0;pointer-events:none}
+.boot-in{font-size:12.5px;color:var(--dim);letter-spacing:.02em}
+
+/* ── 지도 기본 컨트롤을 어두운 톤으로 ───────────────────────────
+   MapLibre 기본 CSS 는 밝은 지도를 전제로 흰 버튼 · 흰 출처 막대를 준다.
+   여기 배경은 #070b12 라 그대로 두면 오른쪽 아래만 하얗게 뜬다.
+   style.css 가 maplibre-gl.css 뒤에 오므로 !important 없이 눌린다
+   (index.html 11~12줄 — 순서를 바꾸면 여기가 다 풀린다).
+
+   아이콘은 데이터 URI 로 박힌 검은 글리프라 색을 직접 못 준다. 대신 글리프를
+   담은 span 에만 invert 를 건다 — 버튼에 걸면 어둡게 칠한 배경까지 뒤집힌다. */
+.maplibregl-ctrl-group{
+  background:var(--glass);
+  backdrop-filter:blur(14px) saturate(1.3);
+  -webkit-backdrop-filter:blur(14px) saturate(1.3);
+  border:1px solid var(--line);
+  border-radius:10px;
+  box-shadow:var(--shadow);
+  overflow:hidden;
+}
+.maplibregl-ctrl-group button{
+  width:32px;height:32px;background:none;
+}
+.maplibregl-ctrl-group button+button{border-top:1px solid var(--line2)}
+.maplibregl-ctrl-group button:hover{background:rgba(255,255,255,.07)}
+.maplibregl-ctrl-group button:focus{box-shadow:none}
+.maplibregl-ctrl-group button:focus-visible{box-shadow:inset 0 0 0 2px var(--accent)}
+.maplibregl-ctrl-group button:disabled .maplibregl-ctrl-icon{opacity:.3}
+.maplibregl-ctrl-icon{filter:invert(1);opacity:.72}
+.maplibregl-ctrl-group button:hover .maplibregl-ctrl-icon{opacity:1}
+
+/* 출처 표시 — 접힌 (i) 와 펼친 막대 둘 다.
+   선택자를 마구 짧게 쓰면 안 된다. maplibre 쪽이
+   `.maplibregl-ctrl.maplibregl-ctrl-attrib{background:hsla(0,0%,100%,.5)}` 처럼
+   클래스 두 개로 잡아 놔서, 한 개짜리로 덮으려 하면 특정도에서 진다.
+   아래는 전부 저쪽과 같은 수 이상으로 맞춰 놨다. */
+.maplibregl-ctrl.maplibregl-ctrl-attrib{
+  font-size:10px;
+  background-color:var(--glass);
+  color:var(--faint);
+  border-radius:9px;
+  padding:1px 6px;
+}
+.maplibregl-ctrl-attrib.maplibregl-compact{
+  background-color:var(--glass);
+  color:var(--faint);
+  border:1px solid var(--line2);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+}
+.maplibregl-ctrl-attrib a{color:var(--dim);text-decoration:none}
+.maplibregl-ctrl-attrib a:hover{color:var(--ink);text-decoration:underline}
+
+/* (i) 글리프는 두 군데서 그려진다 — 버튼의 background-image 와 :after.
+   둘 다 검은 글리프라 같이 뒤집는다. */
+.maplibregl-ctrl-attrib.maplibregl-compact:after{filter:invert(1);opacity:.6}
+.maplibregl-ctrl-attrib.maplibregl-compact:hover:after{opacity:.9}
+.maplibregl-ctrl-attrib-button{background-color:transparent;filter:invert(1);opacity:.6}
+.maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-button{
+  background-color:transparent;
+}
+.maplibregl-ctrl-attrib-button:focus,
+.maplibregl-ctrl-group button:focus{box-shadow:none}
+
+/* 시간 막대에 가리지 않게 띄운다.
+   64px 로 박아 뒀는데 폰에서는 막대가 두 줄로 접혀 90px 을 넘는다 — 확대
+   단추와 출처 표시가 그대로 깔렸다. 출처는 배경지도 약관상 보여야 하는
+   것이라 가리면 안 된다. 막대 실측 높이(--tbh)를 따라간다. */
+.maplibregl-ctrl-bottom-right{
+  margin-bottom:0;
+  bottom:calc(var(--tbh) + 14px + var(--padb));
+  right:calc(2px + var(--padr));
+}
+
+/* ── 지점 조회 팝업 ────────────────────────────────────────────
+   지도를 누르면 그 자리의 세 모델 값이 한 창에 뜬다. 변수가 열셋이라
+   세로로 쌓으면 400px 을 넘겨 지도를 다 덮는다. 그래서 모델을 가로
+   칸으로 나란히 놓고, 칸마다 이름 한 줄 · 값 한 줄로 눌러 담는다. */
+.ptpop .maplibregl-popup-content {
+    background: rgba(12, 17, 26, .93);
+    border: 1px solid rgba(255, 255, 255, .13);
+    border-radius: 12px;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, .5);
+    padding: 0;
+    backdrop-filter: blur(14px);
+}
+/* 꼭지는 붙는 방향마다 색을 칠할 변이 다르다. 하나만 칠해 두면 창이
+   아래로 뒤집혀 뜰 때 꼭지가 사라진다. */
+.ptpop.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+.ptpop.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+.ptpop.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+    border-top-color: rgba(12, 17, 26, .93);
+}
+.ptpop.maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.ptpop.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+.ptpop.maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+    border-bottom-color: rgba(12, 17, 26, .93);
+}
+.ptpop.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+    border-right-color: rgba(12, 17, 26, .93);
+}
+.ptpop.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+    border-left-color: rgba(12, 17, 26, .93);
+}
+.ptpop .maplibregl-popup-close-button {
+    color: rgba(255, 255, 255, .5);
+    font-size: 17px; line-height: 1; padding: 3px 7px;
+    background: none; border: 0; right: 1px; top: 1px;
+}
+.ptpop .maplibregl-popup-close-button:hover { color: #fff; background: none; }
+
+.pt-in { padding: 9px 11px 9px; font-size: 12px; }
+
+.pt-h {
+    display: flex; align-items: baseline; gap: 10px;
+    padding-right: 16px; margin-bottom: 7px;
+    border-bottom: 1px solid rgba(255, 255, 255, .09); padding-bottom: 6px;
+}
+.pt-h b { font-size: 12px; font-weight: 700; color: rgba(255, 255, 255, .95); }
+.pt-h span { font-size: 11px; color: rgba(255, 255, 255, .5); margin-left: auto; }
+
+/* 표식을 격자칸으로 옮겼다는 알림. 눈에 띄되 값을 가리지는 않게. */
+.pt-snap {
+    font-size: 10.5px; color: rgba(255, 255, 255, .48);
+    margin: -3px 0 6px; line-height: 1.3;
+}
+
+.pt-cols { display: flex; gap: 0; align-items: stretch; }
+.pt-c { min-width: 104px; padding: 0 9px; }
+.pt-c + .pt-c { border-left: 1px solid rgba(255, 255, 255, .09); }
+.pt-c:first-child { padding-left: 0; }
+.pt-c:last-child { padding-right: 0; }
+
+.pt-cn {
+    font-size: 10px; font-weight: 700; letter-spacing: .04em;
+    color: rgba(255, 255, 255, .45); text-transform: uppercase;
+    margin-bottom: 5px;
+}
+.pt-cn u { display: block; text-decoration: none; font-weight: 400;
+           color: #E0A33A; letter-spacing: 0; text-transform: none; }
+
+.pt-e { margin-bottom: 6px; }
+.pt-el { font-size: 10.5px; color: rgba(255, 255, 255, .45); line-height: 1.25; }
+.pt-ev { font-size: 12.5px; font-weight: 600; color: rgba(255, 255, 255, .95);
+         line-height: 1.25; white-space: nowrap; }
+.pt-ed {
+    display: flex; align-items: center; gap: 3px;
+    font-size: 10.5px; color: #F2B33D; line-height: 1.25; white-space: nowrap;
+}
+.pt-ar { display: inline-flex; width: 12px; height: 12px; }
+.pt-ar svg { width: 12px; height: 12px; display: block; }
+
+.pt-f {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 7px; padding-top: 7px;
+    border-top: 1px solid rgba(255, 255, 255, .09);
+}
+.pt-more {
+    flex: 1; padding: 5px 8px; font: inherit; font-size: 11.5px; font-weight: 600;
+    color: rgba(255, 255, 255, .9); cursor: pointer;
+    background: rgba(255, 255, 255, .1);
+    border: 1px solid rgba(255, 255, 255, .14); border-radius: 7px;
+}
+.pt-more:hover { background: rgba(255, 255, 255, .17); }
+.pt-f i { font-style: normal; font-size: 10.5px; color: #1E86BC; white-space: nowrap; }
+
+/* ── 지점 시계열 (큰 창) ───────────────────────────────────────
+   작은 패널에 열셋을 욱여넣으면 축 숫자가 안 읽힌다. 화면을 덮는 창
+   하나에 칸을 크게 벌려 놓고, 폭이 모자라면 칸 수를 줄인다. */
+.ptd {
+    position: fixed; inset: 0; z-index: 60;
+    display: flex; align-items: center; justify-content: center;
+    padding: 22px;
+    background: rgba(4, 7, 12, .62);
+    backdrop-filter: blur(3px);
+}
+.ptd[hidden] { display: none; }
+/* 높이는 **내용에 맞춘다**. 880px 로 박아 두면 모델이 한둘뿐인 지점에서
+   창 아래가 휑하게 남는다. 넘칠 때만 max-height 에 걸려 본문이 구른다. */
+.ptd-in {
+    display: flex; flex-direction: column;
+    width: min(1240px, 96vw); height: auto; max-height: min(880px, 92vh);
+    border-radius: 16px; overflow: hidden;
+}
+.ptd-head {
+    display: flex; align-items: center; gap: 16px;
+    padding: 13px 16px; flex: 0 0 auto;
+    border-bottom: 1px solid rgba(255, 255, 255, .1);
+}
+.ptd-nm { font-size: 13.5px; font-weight: 700; color: rgba(255, 255, 255, .95); }
+.ptd-leg { display: flex; gap: 14px; margin-left: auto; }
+.ptd-k { display: flex; align-items: center; gap: 6px;
+         font-size: 11.5px; color: rgba(255, 255, 255, .6); }
+.ptd-k[hidden] { display: none; }
+.ptd-k i { width: 14px; height: 3px; border-radius: 2px; }
+.ptd-x {
+    width: 28px; height: 28px; flex: 0 0 auto;
+    font-size: 14px; line-height: 1; cursor: pointer;
+    color: rgba(255, 255, 255, .65);
+    background: rgba(255, 255, 255, .08);
+    border: 1px solid rgba(255, 255, 255, .13); border-radius: 8px;
+}
+.ptd-x:hover { color: #fff; background: rgba(255, 255, 255, .16); }
+.ptd-body { flex: 0 1 auto; overflow-y: auto; padding: 12px; }
+.ptd-cv { display: block; cursor: crosshair; }
+
+@media (max-width: 900px) {
+    .pt-cols { flex-wrap: wrap; }
+    .pt-c { min-width: 96px; }
+    .ptd { padding: 8px; }
+    .ptd-in { width: 100vw; height: auto; max-height: 100vh; border-radius: 0; }
+}
+
+/* 새 예보 알림. 탭을 하루 열어 둬도 옛 시간축을 붙들고 있지 않게. */
+.newcyc{position:fixed;left:50%;transform:translateX(-50%);z-index:60;
+  bottom:calc(var(--tbh) + 12px + var(--padb));
+  padding:8px 14px;border-radius:999px;cursor:pointer;font-size:12px;
+  background:rgba(24,26,34,.94);border:1px solid var(--line2);
+  color:var(--fg);box-shadow:0 6px 22px rgba(0,0,0,.45)}
+.newcyc b{color:var(--accent);font-weight:600;margin-right:5px}
+.newcyc:hover{border-color:var(--accent)}
+
+/* ══════════════════════════════════════════════════════════════════════
+   손안의 화면
+   ──────────────────────────────────────────────────────────────────────
+   폰은 넓이가 아니라 **높이**가 없다. 그래서 규칙은 하나다 —
+   무엇도 지도 위에 겹쳐 세로로 쌓지 않는다.
+
+     · 위: 브랜드 / 모델 / 변수  세 줄을 한 줄씩 얇게, 변수는 옆으로 굴린다
+     · 아래: 시간막대를 두 줄로 접어 재생바에 화면 너비를 통째로 준다
+     · 패널: 오른쪽에 세워 두던 것을 시간막대 위 서랍으로 눕힌다
+     · 손가락: 누를 것은 전부 40px 이상으로 (pointer:coarse)
+
+   화면 크기(max-width)와 손가락 여부(pointer:coarse)는 따로 본다. 태블릿은
+   넓지만 손가락이고, 좁은 창의 데스크톱은 마우스다. 섞으면 둘 다 어긋난다.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── 누를 것은 크게 ─────────────────────────────────────────── */
+@media (pointer:coarse){
+  /* 재생바 손잡이 13px 은 손끝으로 못 잡는다. 굵기는 그대로 두고 손잡이만
+     키운다 — 막대까지 굵어지면 눈금이 묻힌다. */
+  .rng::-webkit-slider-thumb{width:22px;height:22px}
+  .rng::-moz-range-thumb{width:22px;height:22px}
+  .scrub{padding:14px 0 10px}
+  #play{width:44px;height:44px;font-size:15px}
+  .iconbtn{padding:11px}
+  .iconbtn.wide{padding:11px 12px}
+  .iconbtn svg{width:19px;height:19px}
+  .p-x{padding:7px}
+  .p-x svg{width:17px;height:17px}
+  .sw{width:44px;height:26px;border-radius:13px}
+  .sw::after{width:20px;height:20px}
+  .sw:checked::after{transform:translateX(18px)}
+  .sel,.speed{padding-top:8px;padding-bottom:8px}
+  .varbar button{padding:10px 13px}
+  .modelbar button{padding:9px 15px 8px}
+  .ob-seg{padding:7px 9px;font-size:11px}
+  .ob-chip{padding:6px 11px;font-size:11px}
+  .ob-st{padding-top:9px;padding-bottom:9px}
+  .ob-q{padding:9px 10px}
+  /* 목록을 끝까지 굴렸을 때 그 아래 지도까지 딸려 움직이지 않게. */
+  .ob-list,.ob-body,.panel,.varbar,.modal-in,.ptd-body{overscroll-behavior:contain}
+}
+
+/* ── 폰 (세로) ──────────────────────────────────────────────── */
+@media (max-width:640px){
+  :root{--r:14px}
+
+  /* 위 — 세 줄을 얇게. 변수 탭은 세로로 쌓으면 여섯 줄이라 화면 절반을
+     먹는다. 옆으로 눕히고 넘치면 굴린다 (스크롤 막대는 숨긴다). */
+  .topbar{left:calc(8px + var(--padl));right:calc(8px + var(--padr));
+          top:calc(8px + var(--pad));gap:6px}
+  .brand{padding:6px 11px 6px 7px;gap:8px}
+  .brand-logo{width:26px;height:26px}
+  .brand-title{font-size:12.5px}
+  .brand-sub{font-size:10px}
+  .modelbar{padding:3px;align-self:flex-start}
+  .modelbar button{padding:7px 13px 6px;font-size:12.5px}
+  .modelbar button i{font-size:9.5px}
+
+  .varbar{
+    flex-direction:row; align-self:stretch; min-width:0; max-height:none;
+    overflow-x:auto; overflow-y:hidden; gap:2px;
+    scrollbar-width:none; -webkit-overflow-scrolling:touch;
+  }
+  .varbar::-webkit-scrollbar{display:none}
+  .varbar button{flex:none;padding:8px 11px;gap:5px;align-items:center}
+  /* 세로일 때는 좌우 4px 에 붙고 높이가 움직였다. 가로에서는 반대다.
+     moveInd() 가 남긴 반대쪽 인라인 값은 koos.js 에서 지운다. */
+  .var-ind{left:0;right:auto;top:4px;bottom:4px;height:auto;width:0;
+    transition:transform .22s cubic-bezier(.4,.9,.3,1),
+               width .22s cubic-bezier(.4,.9,.3,1)}
+
+  /* 도구 — 글자 없는 아이콘 넉 장. 브랜드와 한 줄에 선다. */
+  .tools{right:calc(8px + var(--padr));top:calc(8px + var(--pad));padding:3px}
+
+  /* 아래 — 재생바에 너비를 통째로. 한 줄에 다 넣으면 121시간이 180px 에
+     눌려 한 칸이 1.5px 이 된다. 손가락으로는 못 맞춘다. */
+  .timebar{
+    left:calc(8px + var(--padl)); right:calc(8px + var(--padr));
+    bottom:calc(8px + var(--padb));
+    flex-wrap:wrap; gap:0 10px; padding:8px 12px 4px;
+  }
+  #play{order:1}
+  .clock{order:2;flex:1;min-width:0}
+  .c-main{font-size:13.5px}
+  .speed{order:3;display:block}          /* 폰에서도 배속은 쓴다 */
+  .scrub{order:4;flex:1 0 100%;padding:8px 2px 6px}
+  .ticks b{font-size:8.5px}
+
+  /* 범례 — 시간막대 바로 위 왼쪽. 오른쪽 끝까지 늘이지 않는다. 그 자리는
+     지도 확대 단추와 출처 표시가 써야 한다 (아래). */
+  .legend{left:calc(8px + var(--padl));min-width:172px;max-width:62vw;
+          padding:7px 10px 6px}
+  .legend .lg-bar{height:8px}
+
+  /* 지도 확대 단추 — 범례와 같은 줄 오른쪽 끝 (위치는 --tbh 규칙이 잡는다).
+     손가락 크기로 키운다. */
+  .maplibregl-ctrl-group button{width:36px;height:36px}
+  .maplibregl-ctrl-bottom-right .maplibregl-ctrl{margin:0 4px 6px 0}
+
+  /* 패널 — 오른쪽에 세우던 것을 시간막대 위 서랍으로. 범례를 덮으므로
+     z 를 올린다 (열려 있는 동안은 서랍이 주인공이다). */
+  .panel{
+    left:calc(8px + var(--padl)); right:calc(8px + var(--padr));
+    top:auto; bottom:calc(var(--tbh) + 18px + var(--padb));
+    width:auto; z-index:22; padding:12px 13px;
+    max-height:min(54vh, calc(100dvh - 250px));
+  }
+  .panel.closed{transform:translateY(10px) scale(.99)}
+  .panel.obs{width:auto;max-height:min(64vh, calc(100dvh - 210px))}
+  .ob-list{min-height:90px}
+  .ob-filter .sel{max-width:44%}
+
+  /* 상세 — 그래프는 클수록 낫다. 거의 전체 화면으로 띄운다. */
+  .obsdetail{
+    left:calc(8px + var(--padl)); right:calc(8px + var(--padr));
+    top:calc(8px + var(--pad)); bottom:calc(8px + var(--padb));
+    width:auto; max-width:none; max-height:none; z-index:24; padding:11px 12px;
+  }
+  .ob-nm{font-size:14px}
+
+  /* 지도 클릭 창 — 세 모델을 가로로 나란히 두면 폰 너비를 넘는다.
+     900px 규칙에서 이미 줄바꿈이 걸려 있고, 여기서는 넘침만 막는다. */
+  .ptpop .maplibregl-popup-content{max-width:calc(100vw - 20px)}
+  .pt-c{min-width:88px}
+
+  /* 도움말 */
+  .modal{padding:10px}
+  .modal-in{max-height:min(88vh, calc(100dvh - 20px));padding:18px 16px}
+  .modal-in h2{font-size:16px}
+  .htab td,.htab th{font-size:11.5px}
+}
+
+/* ── 아주 좁은 폰 (SE 급 375px 이하) ────────────────────────── */
+@media (max-width:380px){
+  .brand-title{font-size:11.5px}
+  .brand-sub{display:none}               /* 사이클은 도움말에도 적혀 있다 */
+  .modelbar button{padding:7px 10px 6px;font-size:12px}
+  .modelbar button i{display:none}
+  .clock{min-width:0}
+  .c-sub{font-size:9.5px}
+  /* 320px 폰에서 브랜드와 도구가 한 줄에서 부딪힌다. 도구를 바짝 조인다. */
+  .tools{gap:0;padding:2px}
+  .iconbtn{padding:9px}
+}
+
+/* ── 폰 가로보기 ────────────────────────────────────────────
+   높이가 400px 도 안 된다. 위아래로 쌓인 것을 최대한 걷어낸다. */
+@media (max-height:480px) and (orientation:landscape){
+  .brand-txt{display:none}
+  .brand{padding:6px}
+  .topbar{gap:5px}
+  .varbar{flex-direction:row;max-height:none;overflow-x:auto;overflow-y:hidden;
+          scrollbar-width:none}
+  .varbar::-webkit-scrollbar{display:none}
+  .varbar button{flex:none}
+  .var-ind{left:0;right:auto;top:4px;bottom:4px;height:auto;width:0}
+  .timebar{flex-wrap:nowrap;padding:6px 12px}
+  .scrub{flex:1 0 auto;padding:10px 0 6px}
+  .legend{display:none}                  /* 색 눈금보다 지도가 먼저다 */
+  .panel{max-height:calc(100dvh - 130px)}
+  .obsdetail{top:calc(6px + var(--pad));bottom:calc(6px + var(--padb));max-height:none}
+}
+
+/* ── 움직임을 줄여 달라고 한 사람에게 ───────────────────────── */
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;transition-duration:.01ms !important}
+}
