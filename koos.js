@@ -56,7 +56,7 @@ const FLOW = {
 };
 const VECNAME = { wrf: "바람 입자", swan: "파향 입자", mohid: "해류 입자" };
 
-const store = new Store("data");
+const store = new Store("https://ust21-forecast.pages.dev/data");
 const ren = new Renderer();
 /* 섞임 비율은 **그릴 때** 계산한다. rAF 에서만 적어 두면, 정시에 자료가
    걸려 판을 맞바꾸고 곧바로 다시 그릴 때 옛 비율이 새 판에 적용돼 화면이
