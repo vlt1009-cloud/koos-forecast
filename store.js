@@ -176,6 +176,7 @@ export class Store {
        않는다 — 넘기는 경로가 곧 사이트 기준 경로다. 도장은 관측 갱신
        시각으로 따로 찍는다 (관측은 10분마다, 예측은 하루마다 바뀐다). */
     json(url) {
+        if (url.startsWith("ts/")) url = "https://ust21-forecast.pages.dev/" + url;
         return this._fetch(this.obsV ? `${url}?v=${this.obsV}` : url,
                            { json: true }, 1);
     }
